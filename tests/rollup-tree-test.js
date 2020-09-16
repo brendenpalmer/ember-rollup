@@ -41,69 +41,99 @@ describe('rollup-tree', function() {
     });
   });
 
-  describe('rollupAllTheThings', function() {
+  describe('rollupAllTheThings', function () {
     let output;
     const addonPath = path.dirname(`${__dirname}`);
-    afterEach(co.wrap(function* () {
-      yield output.dispose();
-    }));
+    afterEach(
+      co.wrap(function* () {
+        yield output.dispose();
+      })
+    );
 
-    it('combines rollup dependencies with tree from super when top addon', co.wrap(function* () {
-      this.timeout(10000);
-      const root = yield createTempDir();
-      root.write({
-        'myRootFile.js': '// myRootFile.js'
-      });
-      const addon = {
-        root: addonPath,
-        parent: {},
-        project: {
-          addons: [{
-            name: 'my-addon'
-          }]
-        }
-      };
-      let dependencies = [{ fileName: 'spaniel.js', moduleName: 'spaniel' }];
-      const superFunc = (tree) => tree;
+    it(
+      'combines rollup dependencies with tree from super when top addon',
+      co.wrap(function* () {
+        this.timeout(10000);
+        const root = yield createTempDir();
+        root.write({
+          'myRootFile.js': '// myRootFile.js',
+        });
+        const addon = {
+          root: addonPath,
+          parent: {},
+          project: {
+            addons: [
+              {
+                name: 'my-addon',
+              },
+            ],
+          },
+        };
+        let dependencies = [{ fileName: 'spaniel.js', moduleName: 'spaniel' }];
+        const superFunc = (tree) => tree;
 
-      let node = rollupTree.rollupAllTheThings.call(addon, root.path(), dependencies, superFunc);
-      output = createBuilder(node);
-      yield output.build();
-      expect(output.changes()).to.deep.equal({
-        'myRootFile.js': 'create',
-        'spaniel.js': 'create'
-      });
-    }));
+        let node = rollupTree.rollupAllTheThings.call(
+          addon,
+          root.path(),
+          dependencies,
+          superFunc
+        );
+        output = createBuilder(node);
+        yield output.build();
+        expect(output.changes()).to.deep.equal({
+          'myRootFile.js': 'create',
+          'spaniel.js': 'create',
+        });
+      })
+    );
 
-    it('does not include rollup deps and just returns root tree via super when addon is not the top addon', co.wrap(function* () {
-      this.timeout(10000);
-      const root = yield createTempDir();
-      root.write({
-        'myRootFile.js': '// myRootFile.js'
-      });
-      const addon = {
-        root: addonPath,
-        name: 'my-addon',
-        parent: {
-          parent: {}
-        },
-        project: {
-          addons: [{
-            name: 'my-addon'
-          }]
-        }
-      };
-      let dependencies = [{ fileName: 'spaniel.js', moduleName: 'spaniel' }];
-      const superFunc = (tree) => tree;
+    it(
+      "does include rollup deps when this is the first call to an addon's `treeFor*` method and it is not the top addon",
+      co.wrap(function* () {
+        this.timeout(10000);
 
-      let node = rollupTree.rollupAllTheThings.call(addon, root.path(), dependencies, superFunc);
-      output = createBuilder(node);
-      yield output.build();
-      expect(output.read()).to.deep.equal({
-        'myRootFile.js': '// myRootFile.js'
-      });
-    }));
+        const root = yield createTempDir();
+
+        root.write({
+          'myRootFile.js': '// myRootFile.js',
+        });
+
+        const addon = {
+          root: addonPath,
+          name: 'my-addon',
+          parent: {
+            parent: {},
+          },
+          project: {
+            addons: [
+              {
+                name: 'my-addon',
+              },
+            ],
+          },
+        };
+
+        let dependencies = [{ fileName: 'spaniel.js', moduleName: 'spaniel' }];
+        const superFunc = (tree) => tree;
+
+        let node = rollupTree.rollupAllTheThings.call(
+          addon,
+          root.path(),
+          dependencies,
+          superFunc
+        );
+
+        output = createBuilder(node);
+        yield output.build();
+
+        expect(output.changes()).to.deep.equal({
+          'myRootFile.js': 'create',
+          'spaniel.js': 'create',
+        });
+      })
+    );
   });
+
   describe('rollup', function() {
     let output;
     const addonPath = path.dirname(`${__dirname}`);

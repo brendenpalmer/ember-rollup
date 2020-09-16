@@ -13,6 +13,10 @@ const resolve = require('resolve');
 const es5Prefix = 'let _outputModule = (function() { let exports = {}; let module = { exports: exports };';
 const es5Postfix = 'return module.exports; })(); exports["default"] = _outputModule';
 
+// a cache by addon instance to keep track of if we've added/bundled
+// a given rollup entry
+const addonCacheByTreeForHook = new WeakMap();
+
 function classifyDependencies(modules) {
   const namespacedDependencies = [];
   const nonNamespacedDependencies = [];
@@ -47,28 +51,6 @@ function classifyDependencies(modules) {
     namespacedDependencies,
     nonNamespacedDependencies
   }
-}
-
-function shouldAddRuntimeDependencies() {
-  let current = this;
-  let app;
-
-  // Keep iterating upward until we don't have a grandparent.
-  // Has to do this grandparent check because at some point we hit the project.
-  do {
-    app = current.app || app;
-  } while (current.parent.parent && (current = current.parent));
-
-  let isTopLevelAddon = false;
-  for (let i = 0; i < this.project.addons.length; i++) {
-    const addon = this.project.addons[i];
-    isTopLevelAddon = isTopLevelAddon || addon.name === this.name;
-  }
-
-  // If this addon isn't included directly by the app, all bets are off
-  // If the addon is included directly in the app, only import dependencies
-  // if this instance is the top level instance
-  return !isTopLevelAddon || !this.parent.parent;
 }
 
 function _findEntry(pkg, rollupEntry) {
@@ -174,16 +156,50 @@ function rollup(runtimeDependencies, transpile, addonRoot) {
   return runtimeNpmTree;
 }
 
-function rollupAllTheThings(root, runtimeDependencies, superFunc, transpile, superAnnotation) {
-  if (shouldAddRuntimeDependencies.call(this)) {
-    const annotation = `[ember-rollup] Merge runtime dependency tree and ${superAnnotation || ' unknown treeFor hook'}`;
-    const runtimeNpmTree = rollup(runtimeDependencies, transpile, this.root);
-    return superFunc.call(this, new Merge([runtimeNpmTree, root].filter(Boolean), { annotation }));
-  } else {
-    return superFunc.call(this, root);
+function shouldAddRuntimeDependencies(context, superAnnotation) {
+  if (!addonCacheByTreeForHook.has(context)) {
+    addonCacheByTreeForHook.set(context, {});
   }
+
+  const config = addonCacheByTreeForHook.get(context);
+
+  // if this is the first call to `shouldAddRuntimeDependencies` for a
+  // given `superAnnotation` (eg, `treeForVendor`, `treeForAddon`, etc)
+  const shouldAddDependencies = !config[superAnnotation];
+
+  // mark the `superAnnotation` as called for this addon
+  config[superAnnotation] = true;
+
+  return shouldAddDependencies;
 }
 
+function rollupAllTheThings(
+  root,
+  runtimeDependencies,
+  superFunc,
+  transpile,
+  superAnnotation
+) {
+  if (shouldAddRuntimeDependencies(this, superAnnotation)) {
+    const annotation = `[ember-rollup] Merge runtime dependency tree and ${
+      superAnnotation || ' unknown treeFor hook'
+    }`;
 
-module.exports = { rollup, classifyDependencies, rollupAllTheThings, _findEntry }
+    const runtimeNpmTree = rollup(runtimeDependencies, transpile, this.root);
+
+    return superFunc.call(
+      this,
+      new Merge([runtimeNpmTree, root].filter(Boolean), { annotation })
+    );
+  }
+
+  return superFunc.call(this, root);
+}
+
+module.exports = {
+  rollup,
+  classifyDependencies,
+  rollupAllTheThings,
+  _findEntry,
+};
 
